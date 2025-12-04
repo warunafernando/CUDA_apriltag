@@ -1,6 +1,12 @@
 #include "camera_controls.h"
 #include <iostream>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <filesystem>
+#include <glob.h>
+#include <dirent.h>
 
 AppConfig::Camera::Controls readCameraControls(cv::VideoCapture& cap) {
     AppConfig::Camera::Controls controls;
@@ -213,5 +219,437 @@ void applyCameraControls(cv::VideoCapture& cap, const AppConfig::Camera::Control
             std::cout << "  Set gamma: " << controls.gamma << std::endl;
         }
     }
+}
+
+// ============================================================================
+// Camera Detection Functions
+// ============================================================================
+
+std::vector<CameraInfo> detectV4L2Cameras() {
+    std::vector<CameraInfo> cameras;
+    
+    // Check /dev/video* devices
+    glob_t glob_result;
+    if (glob("/dev/video*", GLOB_NOSORT, nullptr, &glob_result) == 0) {
+        for (size_t i = 0; i < glob_result.gl_pathc; ++i) {
+            std::string device_path = glob_result.gl_pathv[i];
+            
+            // Try to open the device
+            cv::VideoCapture test_cap;
+            bool opened = test_cap.open(device_path, cv::CAP_V4L2);
+            
+            CameraInfo info;
+            info.device_path = device_path;
+            info.backend_name = "V4L2";
+            info.is_available = opened;
+            
+            if (opened) {
+                info.width = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+                info.height = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+                info.fps = test_cap.get(cv::CAP_PROP_FPS);
+                
+                // Extract index from path (e.g., "/dev/video0" -> 0)
+                try {
+                    std::string idx_str = device_path.substr(device_path.find_last_of("video") + 1);
+                    info.index = std::stoi(idx_str);
+                } catch (...) {
+                    info.index = -1;
+                }
+                
+                test_cap.release();
+            } else {
+                info.index = -1;
+                info.width = 0;
+                info.height = 0;
+                info.fps = 0;
+            }
+            
+            cameras.push_back(info);
+        }
+        globfree(&glob_result);
+    }
+    
+    return cameras;
+}
+
+std::vector<CameraInfo> detectIndexCameras(int max_index, bool use_v4l2) {
+    std::vector<CameraInfo> cameras;
+    
+    for (int i = 0; i <= max_index; ++i) {
+        cv::VideoCapture test_cap;
+        bool opened = test_cap.open(i, use_v4l2 ? cv::CAP_V4L2 : 0);
+        
+        CameraInfo info;
+        info.index = i;
+        info.device_path = "/dev/video" + std::to_string(i);
+        info.backend_name = use_v4l2 ? "V4L2" : "Default";
+        info.is_available = opened;
+        
+        if (opened) {
+            info.width = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+            info.height = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+            info.fps = test_cap.get(cv::CAP_PROP_FPS);
+            test_cap.release();
+        } else {
+            info.width = 0;
+            info.height = 0;
+            info.fps = 0;
+        }
+        
+        cameras.push_back(info);
+    }
+    
+    return cameras;
+}
+
+std::vector<CameraInfo> detectAvailableCameras(bool use_v4l2) {
+    std::vector<CameraInfo> cameras;
+    
+    // First try V4L2 detection
+    if (use_v4l2) {
+        std::vector<CameraInfo> v4l2_cameras = detectV4L2Cameras();
+        cameras.insert(cameras.end(), v4l2_cameras.begin(), v4l2_cameras.end());
+    }
+    
+    // Also try index-based detection
+    std::vector<CameraInfo> index_cameras = detectIndexCameras(15, use_v4l2);
+    
+    // Merge, avoiding duplicates
+    for (const auto& idx_cam : index_cameras) {
+        bool found = false;
+        for (const auto& existing : cameras) {
+            if (existing.index == idx_cam.index && existing.device_path == idx_cam.device_path) {
+                found = true;
+                break;
+            }
+        }
+        if (!found && idx_cam.is_available) {
+            cameras.push_back(idx_cam);
+        }
+    }
+    
+    // Sort by index
+    std::sort(cameras.begin(), cameras.end(), 
+              [](const CameraInfo& a, const CameraInfo& b) { return a.index < b.index; });
+    
+    return cameras;
+}
+
+CameraInfo getCameraInfo(int index, bool use_v4l2) {
+    CameraInfo info;
+    info.index = index;
+    info.device_path = "/dev/video" + std::to_string(index);
+    info.backend_name = use_v4l2 ? "V4L2" : "Default";
+    
+    cv::VideoCapture test_cap;
+    info.is_available = test_cap.open(index, use_v4l2 ? cv::CAP_V4L2 : 0);
+    
+    if (info.is_available) {
+        info.width = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+        info.height = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+        info.fps = test_cap.get(cv::CAP_PROP_FPS);
+        test_cap.release();
+    } else {
+        info.width = 0;
+        info.height = 0;
+        info.fps = 0;
+    }
+    
+    return info;
+}
+
+CameraInfo getCameraInfo(const std::string& device_path, bool use_v4l2) {
+    CameraInfo info;
+    info.device_path = device_path;
+    info.backend_name = use_v4l2 ? "V4L2" : "Default";
+    
+    cv::VideoCapture test_cap;
+    info.is_available = test_cap.open(device_path, use_v4l2 ? cv::CAP_V4L2 : 0);
+    
+    if (info.is_available) {
+        info.index = -1;  // Will try to extract from path
+        try {
+            size_t pos = device_path.find_last_of("video");
+            if (pos != std::string::npos && pos + 1 < device_path.length()) {
+                std::string idx_str = device_path.substr(pos + 1);
+                info.index = std::stoi(idx_str);
+            }
+        } catch (...) {
+            info.index = -1;
+        }
+        
+        info.width = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+        info.height = static_cast<int>(test_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+        info.fps = test_cap.get(cv::CAP_PROP_FPS);
+        test_cap.release();
+    } else {
+        info.index = -1;
+        info.width = 0;
+        info.height = 0;
+        info.fps = 0;
+    }
+    
+    return info;
+}
+
+void printAvailableCameras(const std::vector<CameraInfo>& cameras) {
+    std::cout << "\n=== Available Cameras ===" << std::endl;
+    
+    if (cameras.empty()) {
+        std::cout << "No cameras detected." << std::endl;
+        return;
+    }
+    
+    int available_count = 0;
+    for (const auto& cam : cameras) {
+        if (cam.is_available) {
+            available_count++;
+            std::cout << "  [" << cam.index << "] " << cam.device_path 
+                      << " (" << cam.backend_name << ")" << std::endl;
+            std::cout << "      Resolution: " << cam.width << "x" << cam.height 
+                      << " @ " << cam.fps << " FPS" << std::endl;
+        }
+    }
+    
+    std::cout << "\nTotal: " << available_count << " available camera(s) out of " 
+              << cameras.size() << " checked" << std::endl;
+}
+
+// ============================================================================
+// Camera Features/Capabilities Functions
+// ============================================================================
+
+CameraFeatures getCameraFeatures(cv::VideoCapture& cap) {
+    CameraFeatures features;
+    
+    if (!cap.isOpened()) {
+        return features;
+    }
+    
+    // Check each property support
+    features.supports_brightness = isPropertySupported(cap, cv::CAP_PROP_BRIGHTNESS);
+    features.supports_contrast = isPropertySupported(cap, cv::CAP_PROP_CONTRAST);
+    features.supports_saturation = isPropertySupported(cap, cv::CAP_PROP_SATURATION);
+    features.supports_exposure = isPropertySupported(cap, cv::CAP_PROP_EXPOSURE);
+    features.supports_gain = isPropertySupported(cap, cv::CAP_PROP_GAIN);
+    features.supports_white_balance = isPropertySupported(cap, cv::CAP_PROP_WB_TEMPERATURE);
+    features.supports_sharpness = isPropertySupported(cap, cv::CAP_PROP_SHARPNESS);
+    features.supports_gamma = isPropertySupported(cap, cv::CAP_PROP_GAMMA);
+    features.supports_auto_exposure = isPropertySupported(cap, cv::CAP_PROP_AUTO_EXPOSURE);
+    features.supports_auto_white_balance = isPropertySupported(cap, cv::CAP_PROP_AUTO_WB);
+    
+    // Get property ranges where available
+    if (features.supports_brightness) {
+        getPropertyRange(cap, cv::CAP_PROP_BRIGHTNESS, 
+                        features.brightness_min, features.brightness_max, 
+                        features.brightness_min);  // step not used
+    }
+    if (features.supports_contrast) {
+        getPropertyRange(cap, cv::CAP_PROP_CONTRAST, 
+                        features.contrast_min, features.contrast_max, 
+                        features.contrast_min);
+    }
+    if (features.supports_exposure) {
+        getPropertyRange(cap, cv::CAP_PROP_EXPOSURE, 
+                        features.exposure_min, features.exposure_max, 
+                        features.exposure_min);
+    }
+    if (features.supports_gain) {
+        getPropertyRange(cap, cv::CAP_PROP_GAIN, 
+                        features.gain_min, features.gain_max, 
+                        features.gain_min);
+    }
+    if (features.supports_white_balance) {
+        getPropertyRange(cap, cv::CAP_PROP_WB_TEMPERATURE, 
+                        features.white_balance_min, features.white_balance_max, 
+                        features.white_balance_min);
+    }
+    
+    return features;
+}
+
+bool isPropertySupported(cv::VideoCapture& cap, int property_id) {
+    if (!cap.isOpened()) {
+        return false;
+    }
+    
+    double value = cap.get(property_id);
+    // If property is not supported, OpenCV typically returns -1 or 0
+    // But we need to check if setting it works
+    double original = value;
+    bool can_set = cap.set(property_id, value);
+    if (can_set) {
+        // Restore original value
+        cap.set(property_id, original);
+    }
+    return can_set && value >= 0;
+}
+
+bool getPropertyRange(cv::VideoCapture& cap, int property_id, 
+                      double& min_val, double& max_val, double& step) {
+    if (!cap.isOpened()) {
+        return false;
+    }
+    
+    // OpenCV doesn't provide direct range queries, so we try to get current value
+    // and test setting different values
+    double current = cap.get(property_id);
+    if (current < 0) {
+        return false;
+    }
+    
+    // Try to find min/max by testing values
+    // This is a simplified approach - actual implementation might need
+    // backend-specific queries (e.g., v4l2-ctl)
+    min_val = 0;
+    max_val = current * 2;  // Estimate
+    step = 1.0;
+    
+    return true;
+}
+
+void printCameraFeatures(const CameraFeatures& features) {
+    std::cout << "\n=== Camera Features/Capabilities ===" << std::endl;
+    
+    std::cout << "Supported Controls:" << std::endl;
+    std::cout << "  Brightness:        " << (features.supports_brightness ? "Yes" : "No");
+    if (features.supports_brightness && features.brightness_max > 0) {
+        std::cout << " (range: " << features.brightness_min << " - " << features.brightness_max << ")";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Contrast:          " << (features.supports_contrast ? "Yes" : "No");
+    if (features.supports_contrast && features.contrast_max > 0) {
+        std::cout << " (range: " << features.contrast_min << " - " << features.contrast_max << ")";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Saturation:        " << (features.supports_saturation ? "Yes" : "No") << std::endl;
+    std::cout << "  Exposure:          " << (features.supports_exposure ? "Yes" : "No");
+    if (features.supports_exposure && features.exposure_max > 0) {
+        std::cout << " (range: " << features.exposure_min << " - " << features.exposure_max << ")";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Gain:              " << (features.supports_gain ? "Yes" : "No");
+    if (features.supports_gain && features.gain_max > 0) {
+        std::cout << " (range: " << features.gain_min << " - " << features.gain_max << ")";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  White Balance:     " << (features.supports_white_balance ? "Yes" : "No");
+    if (features.supports_white_balance && features.white_balance_max > 0) {
+        std::cout << " (range: " << features.white_balance_min << " - " << features.white_balance_max << " K)";
+    }
+    std::cout << std::endl;
+    
+    std::cout << "  Sharpness:         " << (features.supports_sharpness ? "Yes" : "No") << std::endl;
+    std::cout << "  Gamma:             " << (features.supports_gamma ? "Yes" : "No") << std::endl;
+    std::cout << "  Auto Exposure:     " << (features.supports_auto_exposure ? "Yes" : "No") << std::endl;
+    std::cout << "  Auto White Balance: " << (features.supports_auto_white_balance ? "Yes" : "No") << std::endl;
+    std::cout << std::endl;
+}
+
+// ============================================================================
+// Camera Settings Functions (Enhanced)
+// ============================================================================
+
+bool writeCameraControls(cv::VideoCapture& cap, const AppConfig::Camera::Controls& controls) {
+    if (!cap.isOpened()) {
+        std::cerr << "Error: Cannot write camera controls - camera not opened" << std::endl;
+        return false;
+    }
+    
+    applyCameraControls(cap, controls);
+    return true;
+}
+
+bool loadAndApplyCameraControls(cv::VideoCapture& cap, const std::string& config_file) {
+    if (!cap.isOpened()) {
+        std::cerr << "Error: Cannot apply camera controls - camera not opened" << std::endl;
+        return false;
+    }
+    
+    AppConfig config;
+    if (!AppConfig::loadFromJSON(config_file, config)) {
+        std::cerr << "Error: Cannot load config from " << config_file << std::endl;
+        return false;
+    }
+    
+    applyCameraControls(cap, config.camera.controls);
+    return true;
+}
+
+// ============================================================================
+// Camera Opening Helper Functions
+// ============================================================================
+
+bool openCamera(cv::VideoCapture& cap, const std::string& device_or_index, 
+                bool use_v4l2, int width, int height, double fps) {
+    // Try to determine if it's a device path or index
+    bool is_device_path = (device_or_index.find("/dev/video") == 0);
+    
+    bool opened = false;
+    if (is_device_path) {
+        opened = cap.open(device_or_index, use_v4l2 ? cv::CAP_V4L2 : 0);
+    } else {
+        try {
+            int index = std::stoi(device_or_index);
+            opened = cap.open(index, use_v4l2 ? cv::CAP_V4L2 : 0);
+        } catch (...) {
+            // Invalid index, try as device path anyway
+            opened = cap.open(device_or_index, use_v4l2 ? cv::CAP_V4L2 : 0);
+        }
+    }
+    
+    if (!opened) {
+        // Fallback: try default backend
+        if (is_device_path) {
+            opened = cap.open(device_or_index);
+        } else {
+            try {
+                int index = std::stoi(device_or_index);
+                opened = cap.open(index);
+            } catch (...) {
+                opened = false;
+            }
+        }
+    }
+    
+    if (opened) {
+        // Set resolution and FPS if specified
+        if (width > 0 && height > 0) {
+            cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
+            cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+        }
+        if (fps > 0) {
+            cap.set(cv::CAP_PROP_FPS, fps);
+        }
+    }
+    
+    return opened;
+}
+
+bool openCameraFromConfig(cv::VideoCapture& cap, const AppConfig& config) {
+    return openCamera(cap, config.camera.device, config.camera.use_v4l2,
+                     config.camera.width, config.camera.height, config.camera.fps);
+}
+
+bool testCamera(int index, bool use_v4l2) {
+    cv::VideoCapture test_cap;
+    bool opened = test_cap.open(index, use_v4l2 ? cv::CAP_V4L2 : 0);
+    if (opened) {
+        test_cap.release();
+    }
+    return opened;
+}
+
+bool testCamera(const std::string& device_path, bool use_v4l2) {
+    cv::VideoCapture test_cap;
+    bool opened = test_cap.open(device_path, use_v4l2 ? cv::CAP_V4L2 : 0);
+    if (opened) {
+        test_cap.release();
+    }
+    return opened;
 }
 

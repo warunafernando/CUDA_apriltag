@@ -46,6 +46,9 @@ target_link_libraries(quad_extraction_benchmark PRIVATE cuda_apriltag ${OpenCV_L
 add_executable(tune_camera_with_tag src/tune_camera_with_tag.cpp src/camera_intrinsics.cpp)
 target_link_libraries(tune_camera_with_tag PRIVATE cuda_apriltag ${OpenCV_LIBS})
 
+add_executable(camera_utility src/camera_utility.cpp src/config.cpp src/camera_controls.cpp)
+target_link_libraries(camera_utility PRIVATE ${OpenCV_LIBS})
+
 if(BUILD_PYTHON_WRAPPER AND pybind11_FOUND)
   pybind11_add_module(cuda_apriltag_py python/binding.cpp)
   target_link_libraries(cuda_apriltag_py PRIVATE cuda_apriltag)

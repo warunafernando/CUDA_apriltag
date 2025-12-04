@@ -16,6 +16,7 @@ A high-performance, GPU-accelerated AprilTag detection system designed for FRC-s
 - **GPU Undistortion**: Real-time lens distortion correction using Brown-Conrady model
 - **JSON Configuration System**: All settings (camera, detection, ROI) configurable via `config.json`
 - **Camera Controls Management**: Automatic reading and saving of camera settings (brightness, exposure, etc.)
+- **Camera Detection & Utilities**: Helper functions and utility tool for camera detection, feature enumeration, and settings management
 
 ## Performance Summary
 
@@ -71,6 +72,8 @@ make -j4
 
 This will build:
 - `apriltag_demo`: Main demo application
+- `camera_utility`: Camera detection and management utility
+- `tune_camera_with_tag`: Camera intrinsics tuning tool
 - `libcuda_apriltag.so`: Shared library
 - `cuda_apriltag_py`: Python bindings (optional)
 
@@ -104,6 +107,53 @@ The demo will:
 # Normal operation (auto-reads and saves camera settings)
 ./build/apriltag_demo
 ```
+
+### Camera Utility Tool
+
+A dedicated utility program for camera management:
+
+```bash
+./build/camera_utility [command] [options]
+```
+
+**Commands:**
+- `detect` - Detect and list all available cameras
+- `info <index|path>` - Get detailed info about a specific camera
+- `features <index|path>` - Get camera features/capabilities
+- `read <index|path>` - Read current camera settings
+- `write <index|path>` - Write camera settings from config.json
+- `save <index|path>` - Read and save camera settings to config.json
+- `test <index|path>` - Test if camera can be opened
+
+**Examples:**
+```bash
+# Detect all available cameras
+./build/camera_utility detect
+
+# Get camera information
+./build/camera_utility info 0
+./build/camera_utility info /dev/video0
+
+# Get camera features/capabilities
+./build/camera_utility features 0
+
+# Read current camera settings
+./build/camera_utility read 0
+
+# Save camera settings to config.json
+./build/camera_utility save 0
+
+# Write settings from config.json to camera
+./build/camera_utility write 0
+
+# Test if camera can be opened
+./build/camera_utility test 0
+```
+
+**Options:**
+- `--v4l2` - Use V4L2 backend (default)
+- `--no-v4l2` - Don't use V4L2 backend
+- `--config <file>` - Config file path (default: config.json)
 
 ### Python API
 
