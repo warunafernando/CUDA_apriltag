@@ -327,15 +327,23 @@ detector.setUseGpuQuadExtraction(true);   // Use GPU (faster, ~2.85x speedup)
 
 ```
 CUDA_Apriltag/
-├── include/              # Header files
-│   ├── gpu_context.h    # CUDA context management
-│   ├── image_preprocessor.h  # GPU image preprocessing
-│   └── apriltag_gpu.h   # Main detector API
-├── src/                 # Source files
+├── include/                    # Header files
+│   ├── gpu_context.h          # GPU context management
+│   ├── image_preprocessor.h   # Image preprocessing
+│   ├── apriltag_gpu.h         # AprilTag detector
+│   ├── camera_intrinsics.h    # Camera intrinsics JSON utilities
+│   ├── camera_controls.h      # Camera control functions
+│   └── config.h               # Application configuration
+├── src/                        # Source files (.cpp, .cu)
+│   ├── main.cpp               # Main demo program
+│   ├── config.cpp             # Configuration JSON load/save
+│   ├── camera_controls.cpp    # Camera control implementation
+│   ├── camera_intrinsics.cpp  # Intrinsics JSON utilities
+│   ├── camera_utility.cpp     # Camera utility tool
 │   ├── gpu_context.cpp
 │   ├── image_preprocessor.cu
-│   ├── apriltag_gpu.cu  # Main detection pipeline
-│   └── main.cpp         # Demo application
+│   ├── apriltag_gpu.cu        # Main detection pipeline
+│   └── tune_camera_with_tag.cpp  # Camera tuning tool
 ├── python/              # Python bindings and tools
 │   ├── binding.cpp      # Python wrapper
 │   ├── calibrate_camera.py  # Camera calibration tool
