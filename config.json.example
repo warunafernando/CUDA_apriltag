@@ -1,0 +1,23 @@
+{
+  "camera_width": 1280,
+  "camera_height": 720,
+  "camera_fps": 120,
+  "camera_decimation": 2,
+  "camera_device": "/dev/video0",
+  "camera_use_v4l2": true,
+  "tag_size_m": 0.165,
+  "detection_min_quality": 0.01,
+  "detection_max_reprojection_error": 500.0,
+  "detection_min_decision_margin": 0.05,
+  "detection_enable_subpixel_refinement": true,
+  "detection_enable_temporal_filtering": false,
+  "detection_use_gpu_quad_extraction": false,
+  "roi_full_frame_interval": 30,
+  "roi_decay_frames": 20,
+  "roi_max_rois": 16,
+  "test_duration_seconds": 60.0,
+  "test_max_captures": 5,
+  "test_capture_dir": "captures",
+  "files_intrinsics": "camera_intrinsics.json"
+}
+

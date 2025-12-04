@@ -2,6 +2,7 @@
 #include "image_preprocessor.h"
 #include "apriltag_gpu.h"
 #include "camera_intrinsics.h"
+#include "config.h"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -23,10 +24,20 @@
 
 int main(int argc, char** argv) {
     try {
-        int width = 1280;
-        int height = 720;
-        int decimation = 2;  // working 640x360 as in the requirements
-        // Note: Can increase decimation to 3 (426x240) for even faster processing if needed
+        // Load configuration
+        AppConfig config;
+        std::string config_file = "config.json";
+        if (!AppConfig::loadFromJSON(config_file, config)) {
+            std::cout << "Config file not found, using defaults. Creating " << config_file << "..." << std::endl;
+            config.initDefaultIntrinsics();
+            AppConfig::saveToJSON(config_file, config);
+        } else {
+            std::cout << "Loaded configuration from " << config_file << std::endl;
+        }
+        
+        int width = config.camera.width;
+        int height = config.camera.height;
+        int decimation = config.camera.decimation;
 
         cv::VideoCapture cap;
         bool use_test_image = false;
@@ -38,17 +49,22 @@ int main(int argc, char** argv) {
             } else {
                 // Try as device path or index
                 if (arg.find("/dev/video") == 0) {
-                    cap.open(arg, cv::CAP_V4L2);
+                    cap.open(arg, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
                 } else {
                     int idx = std::stoi(arg);
-                    cap.open(idx, cv::CAP_V4L2);
+                    cap.open(idx, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
                 }
             }
         } else {
-            // Try USB camera with V4L2 first (for Arducam and other USB cameras)
-            cap.open("/dev/video0", cv::CAP_V4L2);
+            // Use configured device
+            if (config.camera.device.find("/dev/video") == 0) {
+                cap.open(config.camera.device, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
+            } else {
+                int idx = std::stoi(config.camera.device);
+                cap.open(idx, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
+            }
             if (!cap.isOpened()) {
-                cap.open(0, cv::CAP_V4L2);
+                cap.open(0, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
             }
             if (!cap.isOpened()) {
                 // Fallback to default backend
@@ -63,23 +79,19 @@ int main(int argc, char** argv) {
 
         cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-        cap.set(cv::CAP_PROP_FPS, 120);
+        cap.set(cv::CAP_PROP_FPS, config.camera.fps);
 
         GpuContext ctx(0);
 
         CameraIntrinsics intr;
         
         // Try to load from JSON file, otherwise use defaults
-        std::string intrinsics_file = "camera_intrinsics.json";
-        if (!CameraIntrinsicsUtils::loadFromJSON(intrinsics_file, intr)) {
-            // Default values if JSON file doesn't exist
-            std::cout << "Using default intrinsics (load from " << intrinsics_file << " for calibrated values)" << std::endl;
-            intr.fx = 1000.f;
-            intr.fy = 1000.f;
-            intr.cx = width / 2.f;
-            intr.cy = height / 2.f;
+        if (!CameraIntrinsicsUtils::loadFromJSON(config.files.intrinsics, intr)) {
+            // Use default intrinsics from config
+            std::cout << "Using default intrinsics (load from " << config.files.intrinsics << " for calibrated values)" << std::endl;
+            intr = config.default_intrinsics;
         } else {
-            std::cout << "Loaded camera intrinsics from " << intrinsics_file << std::endl;
+            std::cout << "Loaded camera intrinsics from " << config.files.intrinsics << std::endl;
         }
 
         ImagePreprocessor pre(ctx, width, height, decimation, &intr);
@@ -88,16 +100,25 @@ int main(int argc, char** argv) {
                       0.f, intr.fy, intr.cy,
                       0.f, 0.f, 1.f);
 
-        float tag_size_m = 0.165f;  // example tag size in meters
         AprilTagGpuDetector detector(ctx,
                                      pre.workingWidth(),
                                      pre.workingHeight(),
-                                     tag_size_m,
+                                     config.tag.size_m,
                                      K);
         
-        // Temporarily use OpenCV CPU quad extraction for verification
-        detector.setUseGpuQuadExtraction(false);
-        std::cout << "Using OpenCV CPU quad extraction for tag verification..." << std::endl;
+        // Apply detection settings from config
+        detector.setUseGpuQuadExtraction(config.detection.use_gpu_quad_extraction);
+        detector.setMinQuality(config.detection.min_quality);
+        detector.setMaxReprojectionError(config.detection.max_reprojection_error);
+        detector.setMinDecisionMargin(config.detection.min_decision_margin);
+        detector.setEnableSubpixelRefinement(config.detection.enable_subpixel_refinement);
+        detector.setEnableTemporalFiltering(config.detection.enable_temporal_filtering);
+        
+        if (config.detection.use_gpu_quad_extraction) {
+            std::cout << "Using GPU quad extraction..." << std::endl;
+        } else {
+            std::cout << "Using OpenCV CPU quad extraction..." << std::endl;
+        }
 
         cv::Mat frame;
 
@@ -112,18 +133,18 @@ int main(int argc, char** argv) {
         auto t_start = cv::getTickCount();
         auto t_last_log = t_start;
         
-        // Statistics tracking for 1-minute test
+        // Statistics tracking for test
         std::map<int, int> tag_detection_counts;  // tag_id -> detection count
         int total_frames_processed = 0;
         int frames_with_detections = 0;
-        const double test_duration_seconds = 60.0;  // 1 minute test
+        const double test_duration_seconds = config.test.duration_seconds;
         bool test_complete = false;
         
         // Frame capture for full frame vs ROI visualization
         int full_frame_captures = 0;
         int roi_captures = 0;
-        const int max_captures = 5;  // Capture 5 of each type
-        std::string capture_dir = "captures";
+        const int max_captures = config.test.max_captures;
+        std::string capture_dir = config.test.capture_dir;
         system(("mkdir -p " + capture_dir).c_str());
 
         cv::Mat test_frame;
@@ -267,7 +288,7 @@ int main(int argc, char** argv) {
                     }
                     
                     // Draw 3D cube on the tag
-                    float cube_size = tag_size_m * 0.5f;  // Half tag size for cube
+                    float cube_size = config.tag.size_m * 0.5f;  // Half tag size for cube
                     std::vector<cv::Point3f> cube_points_3d;
                     
                     // Define cube corners in tag coordinate system (tag is in XY plane, Z=0)
@@ -380,7 +401,7 @@ int main(int argc, char** argv) {
                     }
                     
                     // Draw 3D cube on the tag
-                    float cube_size = tag_size_m * 0.5f;
+                    float cube_size = config.tag.size_m * 0.5f;
                     std::vector<cv::Point3f> cube_points_3d;
                     cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, 0));
                     cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, 0));
@@ -499,7 +520,7 @@ int main(int argc, char** argv) {
                     }
                     
                     // Draw 3D cube on the tag
-                    float cube_size = tag_size_m * 0.5f;
+                    float cube_size = config.tag.size_m * 0.5f;
                     std::vector<cv::Point3f> cube_points_3d;
                     cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, 0));
                     cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, 0));
