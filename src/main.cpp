@@ -25,6 +25,15 @@
 
 int main(int argc, char** argv) {
     try {
+        // Check for --read-camera flag
+        bool read_camera_only = false;
+        if (argc > 1) {
+            std::string arg = argv[1];
+            if (arg == "--read-camera" || arg == "-r") {
+                read_camera_only = true;
+            }
+        }
+        
         // Load configuration
         AppConfig config;
         std::string config_file = "config.json";
@@ -43,7 +52,40 @@ int main(int argc, char** argv) {
         cv::VideoCapture cap;
         bool use_test_image = false;
         
+        if (read_camera_only) {
+            // Just read camera settings and exit
+            if (config.camera.device.find("/dev/video") == 0) {
+                cap.open(config.camera.device, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
+            } else {
+                int idx = std::stoi(config.camera.device);
+                cap.open(idx, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
+            }
+            if (!cap.isOpened()) {
+                cap.open(0, config.camera.use_v4l2 ? cv::CAP_V4L2 : 0);
+            }
+            if (!cap.isOpened()) {
+                cap.open(0);
+            }
+            
+            if (cap.isOpened()) {
+                printCameraControls(cap);
+                std::cout << "\nTo save these settings to config.json, use: --save-camera" << std::endl;
+            } else {
+                std::cerr << "Failed to open camera" << std::endl;
+            }
+            return 0;
+        }
+        
+        // Check for --save-camera flag
+        bool save_camera_settings = false;
         if (argc > 1) {
+            std::string arg = argv[1];
+            if (arg == "--save-camera" || arg == "-s") {
+                save_camera_settings = true;
+            }
+        }
+        
+        if (argc > 1 && !save_camera_settings) {
             std::string arg = argv[1];
             if (arg == "--test" || arg == "-t") {
                 use_test_image = true;
@@ -82,9 +124,26 @@ int main(int argc, char** argv) {
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
         cap.set(cv::CAP_PROP_FPS, config.camera.fps);
         
-        // Apply camera control settings
-        std::cout << "Applying camera controls..." << std::endl;
+        // Handle save camera settings mode
+        if (save_camera_settings) {
+            if (saveCameraControlsToConfig(cap, config_file)) {
+                std::cout << "Camera settings saved to " << config_file << std::endl;
+                std::cout << "You can now edit the config file to adjust values." << std::endl;
+            }
+            return 0;
+        }
+        
+        // Read and display current camera settings
+        std::cout << "\nReading current camera settings..." << std::endl;
+        printCameraControls(cap);
+        
+        // Apply camera control settings from config
+        std::cout << "Applying camera controls from config..." << std::endl;
         applyCameraControls(cap, config.camera.controls);
+        
+        // Read and display settings after applying
+        std::cout << "\nCamera settings after applying config:" << std::endl;
+        printCameraControls(cap);
 
         GpuContext ctx(0);
 
