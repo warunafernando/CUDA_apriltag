@@ -1,6 +1,7 @@
 #include "gpu_context.h"
 #include "image_preprocessor.h"
 #include "apriltag_gpu.h"
+#include "camera_intrinsics.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
@@ -307,6 +308,41 @@ PYBIND11_MODULE(cuda_apriltag_py, m) {
           "Create detector from calibration file",
           py::arg("calibration_file"), py::arg("width") = 0, py::arg("height") = 0,
           py::arg("decimation") = 2, py::arg("tag_size_m") = 0.165f);
+    
+    // JSON intrinsics functions
+    m.def("load_intrinsics_from_json", 
+          [](const std::string& filename) -> py::dict {
+              CameraIntrinsics intr;
+              if (CameraIntrinsicsUtils::loadFromJSON(filename, intr)) {
+                  py::dict result;
+                  result["fx"] = intr.fx;
+                  result["fy"] = intr.fy;
+                  result["cx"] = intr.cx;
+                  result["cy"] = intr.cy;
+                  result["k1"] = intr.k1;
+                  result["k2"] = intr.k2;
+                  result["p1"] = intr.p1;
+                  result["p2"] = intr.p2;
+                  result["k3"] = intr.k3;
+                  return result;
+              }
+              throw std::runtime_error("Failed to load intrinsics from JSON");
+          },
+          "Load camera intrinsics from JSON file",
+          py::arg("filename"));
+    
+    m.def("save_intrinsics_to_json",
+          [](const std::string& filename, float fx, float fy, float cx, float cy,
+             float k1, float k2, float p1, float p2, float k3) {
+              CameraIntrinsics intr;
+              intr.fx = fx; intr.fy = fy; intr.cx = cx; intr.cy = cy;
+              intr.k1 = k1; intr.k2 = k2; intr.p1 = p1; intr.p2 = p2; intr.k3 = k3;
+              return CameraIntrinsicsUtils::saveToJSON(filename, intr);
+          },
+          "Save camera intrinsics to JSON file",
+          py::arg("filename"), py::arg("fx"), py::arg("fy"), py::arg("cx"), py::arg("cy"),
+          py::arg("k1") = 0.0f, py::arg("k2") = 0.0f, py::arg("p1") = 0.0f, 
+          py::arg("p2") = 0.0f, py::arg("k3") = 0.0f);
     
     // PyCudaAprilTag class
     py::class_<PyCudaAprilTag>(m, "CudaAprilTag")

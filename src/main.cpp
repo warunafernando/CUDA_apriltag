@@ -1,6 +1,7 @@
 #include "gpu_context.h"
 #include "image_preprocessor.h"
 #include "apriltag_gpu.h"
+#include "camera_intrinsics.h"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -67,11 +68,19 @@ int main(int argc, char** argv) {
         GpuContext ctx(0);
 
         CameraIntrinsics intr;
-        // TODO: fill with real calibration values
-        intr.fx = 1000.f;
-        intr.fy = 1000.f;
-        intr.cx = width / 2.f;
-        intr.cy = height / 2.f;
+        
+        // Try to load from JSON file, otherwise use defaults
+        std::string intrinsics_file = "camera_intrinsics.json";
+        if (!CameraIntrinsicsUtils::loadFromJSON(intrinsics_file, intr)) {
+            // Default values if JSON file doesn't exist
+            std::cout << "Using default intrinsics (load from " << intrinsics_file << " for calibrated values)" << std::endl;
+            intr.fx = 1000.f;
+            intr.fy = 1000.f;
+            intr.cx = width / 2.f;
+            intr.cy = height / 2.f;
+        } else {
+            std::cout << "Loaded camera intrinsics from " << intrinsics_file << std::endl;
+        }
 
         ImagePreprocessor pre(ctx, width, height, decimation, &intr);
 
@@ -235,9 +244,14 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                // Draw detected tags
+                // Draw detected tags with 3D cube visualization
                 // Corners are in working resolution (640x360), need to scale to full frame (1280x720)
                 // (scale_x and scale_y already computed above for ROI scaling)
+                
+                // Camera intrinsics for 3D projection (scaled to full frame)
+                cv::Matx33f K_full(intr.fx * scale_x, 0.f, intr.cx * scale_x,
+                                   0.f, intr.fy * scale_y, intr.cy * scale_y,
+                                   0.f, 0.f, 1.f);
                 
                 for (const auto& det : detections) {
                     cv::Point2f scaled_corners[4];
@@ -251,6 +265,67 @@ int main(int argc, char** argv) {
                                 scaled_corners[(i + 1) % 4],
                                 cv::Scalar(0, 0, 255), 2);
                     }
+                    
+                    // Draw 3D cube on the tag
+                    float cube_size = tag_size_m * 0.5f;  // Half tag size for cube
+                    std::vector<cv::Point3f> cube_points_3d;
+                    
+                    // Define cube corners in tag coordinate system (tag is in XY plane, Z=0)
+                    // Bottom face (on tag plane)
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, 0));  // 0: bottom-left-back
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, 0));  // 1: bottom-right-back
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, 0));  // 2: bottom-right-front
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, 0));  // 3: bottom-left-front
+                    // Top face (above tag)
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, cube_size * 2));  // 4: top-left-back
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, cube_size * 2));  // 5: top-right-back
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, cube_size * 2));  // 6: top-right-front
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, cube_size * 2));  // 7: top-left-front
+                    
+                    // Transform 3D points from tag frame to camera frame
+                    std::vector<cv::Point3f> cube_points_cam;
+                    for (const auto& pt : cube_points_3d) {
+                        cv::Vec4f pt_homogeneous(pt.x, pt.y, pt.z, 1.0f);
+                        cv::Vec4f pt_cam = det.T_cam_tag * pt_homogeneous;
+                        cube_points_cam.push_back(cv::Point3f(pt_cam[0], pt_cam[1], pt_cam[2]));
+                    }
+                    
+                    // Project 3D points to 2D image coordinates
+                    std::vector<cv::Point2f> cube_points_2d;
+                    for (const auto& pt : cube_points_cam) {
+                        if (pt.z > 0) {  // Only project points in front of camera
+                            float x = (pt.x / pt.z) * K_full(0, 0) + K_full(0, 2);
+                            float y = (pt.y / pt.z) * K_full(1, 1) + K_full(1, 2);
+                            cube_points_2d.push_back(cv::Point2f(x, y));
+                        } else {
+                            cube_points_2d.push_back(cv::Point2f(-1, -1));  // Invalid point
+                        }
+                    }
+                    
+                    // Draw cube edges
+                    if (cube_points_2d.size() == 8) {
+                        // Bottom face edges
+                        for (int i = 0; i < 4; ++i) {
+                            int next = (i + 1) % 4;
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 2);
+                            }
+                        }
+                        // Top face edges
+                        for (int i = 4; i < 8; ++i) {
+                            int next = 4 + ((i - 4 + 1) % 4);
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 2);
+                            }
+                        }
+                        // Vertical edges connecting bottom to top
+                        for (int i = 0; i < 4; ++i) {
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[i + 4].x >= 0) {
+                                cv::line(frame, cube_points_2d[i], cube_points_2d[i + 4], cv::Scalar(0, 255, 0), 2);
+                            }
+                        }
+                    }
+                    
                     // Draw corner markers to verify order
                     cv::circle(frame, scaled_corners[0], 5, cv::Scalar(0, 255, 0), -1);  // Green: corner 0 (top-left)
                     cv::circle(frame, scaled_corners[1], 5, cv::Scalar(255, 0, 0), -1);  // Blue: corner 1 (top-right)
@@ -285,18 +360,75 @@ int main(int argc, char** argv) {
                 float scale_x_cap = static_cast<float>(width) / static_cast<float>(pre.workingWidth());
                 float scale_y_cap = static_cast<float>(height) / static_cast<float>(pre.workingHeight());
                 
-                // Draw detected tags (scaled)
+                // Camera intrinsics for 3D projection (scaled to full frame)
+                cv::Matx33f K_full_cap(intr.fx * scale_x_cap, 0.f, intr.cx * scale_x_cap,
+                                       0.f, intr.fy * scale_y_cap, intr.cy * scale_y_cap,
+                                       0.f, 0.f, 1.f);
+                
+                // Draw detected tags with 3D cube (scaled)
                 for (const auto& det : detections) {
                     cv::Point2f scaled_corners_cap[4];
                     for (int i = 0; i < 4; ++i) {
                         scaled_corners_cap[i] = cv::Point2f(det.corners[i].x * scale_x_cap, det.corners[i].y * scale_y_cap);
                     }
                     
+                    // Draw quad outline
                     for (int i = 0; i < 4; ++i) {
                         cv::line(capture_frame, scaled_corners_cap[i],
                                 scaled_corners_cap[(i + 1) % 4],
                                 cv::Scalar(0, 0, 255), 3);
                     }
+                    
+                    // Draw 3D cube on the tag
+                    float cube_size = tag_size_m * 0.5f;
+                    std::vector<cv::Point3f> cube_points_3d;
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, cube_size * 2));
+                    
+                    std::vector<cv::Point3f> cube_points_cam;
+                    for (const auto& pt : cube_points_3d) {
+                        cv::Vec4f pt_homogeneous(pt.x, pt.y, pt.z, 1.0f);
+                        cv::Vec4f pt_cam = det.T_cam_tag * pt_homogeneous;
+                        cube_points_cam.push_back(cv::Point3f(pt_cam[0], pt_cam[1], pt_cam[2]));
+                    }
+                    
+                    std::vector<cv::Point2f> cube_points_2d;
+                    for (const auto& pt : cube_points_cam) {
+                        if (pt.z > 0) {
+                            float x = (pt.x / pt.z) * K_full_cap(0, 0) + K_full_cap(0, 2);
+                            float y = (pt.y / pt.z) * K_full_cap(1, 1) + K_full_cap(1, 2);
+                            cube_points_2d.push_back(cv::Point2f(x, y));
+                        } else {
+                            cube_points_2d.push_back(cv::Point2f(-1, -1));
+                        }
+                    }
+                    
+                    if (cube_points_2d.size() == 8) {
+                        for (int i = 0; i < 4; ++i) {
+                            int next = (i + 1) % 4;
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                        for (int i = 4; i < 8; ++i) {
+                            int next = 4 + ((i - 4 + 1) % 4);
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                        for (int i = 0; i < 4; ++i) {
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[i + 4].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[i + 4], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                    }
+                    
                     cv::putText(capture_frame, "ID:" + std::to_string(det.id),
                                scaled_corners_cap[0],
                                cv::FONT_HERSHEY_SIMPLEX, 0.7,
@@ -347,18 +479,75 @@ int main(int argc, char** argv) {
                     }
                 }
                 
-                // Draw detected tags (scaled)
+                // Camera intrinsics for 3D projection (scaled to full frame)
+                cv::Matx33f K_full_roi(intr.fx * scale_x_roi, 0.f, intr.cx * scale_x_roi,
+                                       0.f, intr.fy * scale_y_roi, intr.cy * scale_y_roi,
+                                       0.f, 0.f, 1.f);
+                
+                // Draw detected tags with 3D cube (scaled)
                 for (const auto& det : detections) {
                     cv::Point2f scaled_corners_roi[4];
                     for (int i = 0; i < 4; ++i) {
                         scaled_corners_roi[i] = cv::Point2f(det.corners[i].x * scale_x_roi, det.corners[i].y * scale_y_roi);
                     }
                     
+                    // Draw quad outline
                     for (int i = 0; i < 4; ++i) {
                         cv::line(capture_frame, scaled_corners_roi[i],
                                 scaled_corners_roi[(i + 1) % 4],
                                 cv::Scalar(0, 0, 255), 3);
                     }
+                    
+                    // Draw 3D cube on the tag
+                    float cube_size = tag_size_m * 0.5f;
+                    std::vector<cv::Point3f> cube_points_3d;
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, 0));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size, -cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f( cube_size, -cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f( cube_size,  cube_size, cube_size * 2));
+                    cube_points_3d.push_back(cv::Point3f(-cube_size,  cube_size, cube_size * 2));
+                    
+                    std::vector<cv::Point3f> cube_points_cam;
+                    for (const auto& pt : cube_points_3d) {
+                        cv::Vec4f pt_homogeneous(pt.x, pt.y, pt.z, 1.0f);
+                        cv::Vec4f pt_cam = det.T_cam_tag * pt_homogeneous;
+                        cube_points_cam.push_back(cv::Point3f(pt_cam[0], pt_cam[1], pt_cam[2]));
+                    }
+                    
+                    std::vector<cv::Point2f> cube_points_2d;
+                    for (const auto& pt : cube_points_cam) {
+                        if (pt.z > 0) {
+                            float x = (pt.x / pt.z) * K_full_roi(0, 0) + K_full_roi(0, 2);
+                            float y = (pt.y / pt.z) * K_full_roi(1, 1) + K_full_roi(1, 2);
+                            cube_points_2d.push_back(cv::Point2f(x, y));
+                        } else {
+                            cube_points_2d.push_back(cv::Point2f(-1, -1));
+                        }
+                    }
+                    
+                    if (cube_points_2d.size() == 8) {
+                        for (int i = 0; i < 4; ++i) {
+                            int next = (i + 1) % 4;
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                        for (int i = 4; i < 8; ++i) {
+                            int next = 4 + ((i - 4 + 1) % 4);
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[next].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[next], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                        for (int i = 0; i < 4; ++i) {
+                            if (cube_points_2d[i].x >= 0 && cube_points_2d[i + 4].x >= 0) {
+                                cv::line(capture_frame, cube_points_2d[i], cube_points_2d[i + 4], cv::Scalar(0, 255, 0), 3);
+                            }
+                        }
+                    }
+                    
                     cv::putText(capture_frame, "ID:" + std::to_string(det.id),
                                scaled_corners_roi[0],
                                cv::FONT_HERSHEY_SIMPLEX, 0.7,
