@@ -174,7 +174,18 @@ intr.fx = 1000.f;  // Focal length X
 intr.fy = 1000.f;  // Focal length Y
 intr.cx = width / 2.f;  // Principal point X
 intr.cy = height / 2.f;  // Principal point Y
+
+// Distortion coefficients (for undistortion)
+intr.k1 = 0.0f;  // Radial distortion
+intr.k2 = 0.0f;
+intr.k3 = 0.0f;
+intr.p1 = 0.0f;  // Tangential distortion
+intr.p2 = 0.0f;
+
+// Undistortion is automatically enabled when distortion coefficients are non-zero
 ```
+
+**Note**: Use the Python calibration tools to obtain accurate camera intrinsics and distortion coefficients.
 
 ### Tag Size
 
@@ -308,14 +319,13 @@ Sample frames captured during testing show:
 
 ## Known Limitations
 
-- Undistortion is not yet implemented (placeholder in code)
 - Temporal filtering is implemented but not yet enabled
 - GPU quad extraction is faster but slightly less robust than OpenCV CPU
 
 ## Future Enhancements
 
 - [x] Camera calibration integration (Python API)
-- [ ] Undistortion kernel implementation
+- [x] Undistortion kernel implementation (GPU-based Brown-Conrady model)
 - [ ] Temporal filtering for pose smoothing
 - [ ] Multi-camera support (up to 4 cameras)
 - [ ] NetworkTables integration for FRC

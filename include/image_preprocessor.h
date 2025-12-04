@@ -24,6 +24,7 @@ struct PreprocessTimings {
     float memcpy_host_ms{0.f};  // host memcpy into pinned buffer
     float h2d_ms{0.f};          // host-to-device copy
     float bgr2gray_ms{0.f};     // BGR->Gray kernel
+    float undistort_ms{0.f};    // undistortion kernel (0 if disabled)
     float decimate_ms{0.f};     // decimation kernel (0 if disabled)
     float total_ms{0.f};        // total GPU-side time (approx)
 };
@@ -64,6 +65,7 @@ private:
     // Device buffers
     unsigned char* d_raw_{nullptr};
     unsigned char* d_gray_{nullptr};
+    unsigned char* d_undistorted_{nullptr};  // Undistorted gray image
 
     CameraIntrinsics intr_{};
 
