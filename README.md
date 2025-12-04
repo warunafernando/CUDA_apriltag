@@ -83,11 +83,27 @@ This will build:
 ```
 
 The demo will:
-- Open the camera at 1280x720 @ 120 FPS
+- Load configuration from `config.json` (creates with defaults if missing)
+- Read current camera settings and save to `config.json`
+- Apply camera controls from config
+- Update `config.json` with actual camera values
+- Open the camera at configured resolution and FPS
 - Run GPU-accelerated AprilTag detection
 - Display detections with visualization
 - Print FPS and timing statistics
 - Save sample frames to `captures/` directory
+
+**Command Line Options:**
+```bash
+# Read and display current camera settings (then exit)
+./build/apriltag_demo --read-camera
+
+# Save current camera settings to config.json (then exit)
+./build/apriltag_demo --save-camera
+
+# Normal operation (auto-reads and saves camera settings)
+./build/apriltag_demo
+```
 
 ### Python API
 
