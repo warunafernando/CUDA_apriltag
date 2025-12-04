@@ -21,12 +21,12 @@ A high-performance, GPU-accelerated AprilTag detection system designed for FRC-s
 
 ### Test Results (1-Minute Test)
 
-- **Total Frames Processed**: 6,227
-- **Frames with Detections**: 6,221
-- **Detection Probability**: **99.90%**
-- **Average FPS**: **103.77 FPS**
+- **Total Frames Processed**: 6,332
+- **Frames with Detections**: 6,330
+- **Detection Probability**: **99.97%**
+- **Average FPS**: **105.52 FPS**
 - **Reprojection Error**: **0.535 pixels** (excellent accuracy)
-- **Tag Detection**: Tag #7 detected consistently
+- **Tag Detection**: Tag #7 detected consistently (ID #7)
 
 ### Timing Breakdown (per frame)
 
