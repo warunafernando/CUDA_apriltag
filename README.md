@@ -187,10 +187,48 @@ intr.p2 = 0.0f;
 
 **Note**: Use the Python calibration tools to obtain accurate camera intrinsics and distortion coefficients.
 
+### Configuration File
+
+All settings are now managed through `config.json`. The program automatically:
+- Creates `config.json` with defaults on first run
+- Reads current camera settings and saves to config
+- Applies settings from config to camera
+- Updates config with actual camera values after applying
+
+**Edit `config.json` to adjust:**
+- Camera resolution, FPS, device path
+- Camera controls (brightness, exposure, etc.)
+- Detection parameters
+- ROI settings
+- Tag size
+
+**Camera Controls:**
+- Use `-1` to leave at camera default/auto
+- Set specific values for manual control
+- Program auto-updates config with actual camera values
+
+Example:
+```json
+{
+  "camera_width": 1280,
+  "camera_height": 720,
+  "camera_fps": 120,
+  "camera_brightness": 0.5,
+  "camera_exposure": 10.0,
+  "camera_auto_exposure": 0,
+  "tag_size_m": 0.165
+}
+```
+
 ### Tag Size
 
-Set the physical tag size (in meters):
+Set the physical tag size (in meters) in `config.json`:
 
+```json
+"tag_size_m": 0.165  // FRC tag size (6.5 inches)
+```
+
+Or in code:
 ```cpp
 float tag_size_m = 0.165f;  // 16.5 cm tag
 ```
