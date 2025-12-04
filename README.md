@@ -13,6 +13,9 @@ A high-performance, GPU-accelerated AprilTag detection system designed for FRC-s
 - **Adaptive Thresholding**: Local adaptive thresholding for robust edge detection in varying lighting
 - **GPU NMS**: Non-maximum suppression on GPU to reduce false positives
 - **Camera Calibration Integration**: Full Python API for chessboard-based camera calibration with auto-capture
+- **GPU Undistortion**: Real-time lens distortion correction using Brown-Conrady model
+- **JSON Configuration System**: All settings (camera, detection, ROI) configurable via `config.json`
+- **Camera Controls Management**: Automatic reading and saving of camera settings (brightness, exposure, etc.)
 
 ## Performance Summary
 
