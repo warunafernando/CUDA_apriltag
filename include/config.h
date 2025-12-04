@@ -43,6 +43,8 @@ struct AppConfig {
         float min_decision_margin{0.05f};      // Minimum decode confidence
         bool enable_subpixel_refinement{true}; // Enable sub-pixel corner refinement
         bool enable_temporal_filtering{false}; // Enable temporal filtering
+        float temporal_filter_alpha{0.3f};     // EMA alpha (0-1, higher = less smoothing)
+        int temporal_filter_max_age{30};        // Max frames to keep history (0 = unlimited)
         bool use_gpu_quad_extraction{false};   // Use GPU quad extraction (false = OpenCV CPU)
     } detection;
     

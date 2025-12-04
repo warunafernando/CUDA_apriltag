@@ -376,14 +376,13 @@ Sample frames captured during testing show:
 
 ## Known Limitations
 
-- Temporal filtering is implemented but not yet enabled
 - GPU quad extraction is faster but slightly less robust than OpenCV CPU
 
 ## Future Enhancements
 
 - [x] Camera calibration integration (Python API)
 - [x] Undistortion kernel implementation (GPU-based Brown-Conrady model)
-- [ ] Temporal filtering for pose smoothing
+- [x] Temporal filtering for pose smoothing
 - [ ] Multi-camera support (up to 4 cameras)
 - [ ] NetworkTables integration for FRC
 - [ ] Pose estimator integration

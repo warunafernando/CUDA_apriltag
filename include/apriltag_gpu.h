@@ -4,6 +4,7 @@
 
 #include <opencv2/core.hpp>
 #include <vector>
+#include <map>
 
 // GPU AprilTag detector interface matching the requirements document.
 // Implements full GPU pipeline: gradients -> edge map -> quad extraction -> decode -> PnP
@@ -80,6 +81,16 @@ public:
     void setMinDecisionMargin(float min_margin) { min_decision_margin_ = min_margin; }
     void setEnableSubpixelRefinement(bool enable) { enable_subpixel_refinement_ = enable; }
     void setEnableTemporalFiltering(bool enable) { enable_temporal_filtering_ = enable; }
+    void setTemporalFilterAlpha(float alpha) { temporal_filter_alpha_ = alpha; }
+    void setTemporalFilterMaxAge(int max_age) { temporal_filter_max_age_ = max_age; }
+
+    // Temporal filtering: track pose history per tag ID
+    struct PoseHistory {
+        cv::Matx44f T_cam_tag;              // Smoothed pose
+        float quat_w{1.f}, quat_x{0.f}, quat_y{0.f}, quat_z{0.f};  // Smoothed quaternion
+        int age{0};                          // Frames since last update
+        bool initialized{false};             // Has this tag been seen before?
+    };
 
     int width() const { return width_; }
     int height() const { return height_; }
@@ -106,6 +117,9 @@ private:
     float min_decision_margin_{0.05f};       // Minimum decode confidence - very low threshold
     bool enable_subpixel_refinement_{true};  // Enable sub-pixel corner refinement
     bool enable_temporal_filtering_{false};  // Enable temporal filtering (pose smoothing)
+    float temporal_filter_alpha_{0.3f};      // EMA alpha for temporal filtering (0-1)
+    int temporal_filter_max_age_{30};       // Max frames to keep pose history
+    std::map<int, PoseHistory> pose_history_;  // tag_id -> pose history
 
     // ROI tracking for multi-rate detection (ROI struct defined above in public section)
     std::vector<ROI> rois_;
@@ -125,6 +139,7 @@ private:
 
     void allocateBuffers();
     void quaternionFromRotationMatrix(const cv::Matx33f& R, float& w, float& x, float& y, float& z);
+    void applyTemporalFilter(AprilTagDetection& det);  // Apply temporal smoothing to pose
     std::vector<AprilTagDetection> detectInRegion(unsigned char* gray_dev,
                                                    int x, int y, int w, int h,
                                                    DetectionTimings* timings);

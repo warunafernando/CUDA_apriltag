@@ -204,6 +204,8 @@ int main(int argc, char** argv) {
         detector.setMinDecisionMargin(config.detection.min_decision_margin);
         detector.setEnableSubpixelRefinement(config.detection.enable_subpixel_refinement);
         detector.setEnableTemporalFiltering(config.detection.enable_temporal_filtering);
+        detector.setTemporalFilterAlpha(config.detection.temporal_filter_alpha);
+        detector.setTemporalFilterMaxAge(config.detection.temporal_filter_max_age);
         
         if (config.detection.use_gpu_quad_extraction) {
             std::cout << "Using GPU quad extraction..." << std::endl;

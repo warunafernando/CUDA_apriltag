@@ -22,6 +22,8 @@
   "detection_min_decision_margin": 0.05,
   "detection_enable_subpixel_refinement": true,
   "detection_enable_temporal_filtering": false,
+  "detection_temporal_filter_alpha": 0.3,
+  "detection_temporal_filter_max_age": 30,
   "detection_use_gpu_quad_extraction": false,
   "roi_full_frame_interval": 30,
   "roi_decay_frames": 20,

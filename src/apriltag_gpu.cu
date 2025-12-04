@@ -924,9 +924,140 @@ void AprilTagGpuDetector::quaternionFromRotationMatrix(const cv::Matx33f& R,
     }
 }
 
+void AprilTagGpuDetector::applyTemporalFilter(AprilTagDetection& det) {
+    auto it = pose_history_.find(det.id);
+    
+    if (it == pose_history_.end() || !it->second.initialized) {
+        // First time seeing this tag - initialize history
+        pose_history_[det.id].T_cam_tag = det.T_cam_tag;
+        pose_history_[det.id].quat_w = det.quat_w;
+        pose_history_[det.id].quat_x = det.quat_x;
+        pose_history_[det.id].quat_y = det.quat_y;
+        pose_history_[det.id].quat_z = det.quat_z;
+        pose_history_[det.id].age = 0;
+        pose_history_[det.id].initialized = true;
+        // Use raw detection for first frame
+        return;
+    }
+    
+    auto& hist = it->second;
+    hist.age = 0;  // Reset age since we saw it this frame
+    
+    // Exponential Moving Average (EMA) for translation
+    float alpha = temporal_filter_alpha_;
+    cv::Matx44f& T_old = hist.T_cam_tag;
+    cv::Matx44f& T_new = det.T_cam_tag;
+    
+    // Smooth translation (last column of transformation matrix)
+    T_old(0, 3) = alpha * T_new(0, 3) + (1.0f - alpha) * T_old(0, 3);
+    T_old(1, 3) = alpha * T_new(1, 3) + (1.0f - alpha) * T_old(1, 3);
+    T_old(2, 3) = alpha * T_new(2, 3) + (1.0f - alpha) * T_old(2, 3);
+    
+    // Smooth rotation using quaternion SLERP (Spherical Linear Interpolation)
+    // Normalize quaternions
+    float q_new_norm = sqrtf(det.quat_w * det.quat_w + det.quat_x * det.quat_x + 
+                             det.quat_y * det.quat_y + det.quat_z * det.quat_z);
+    if (q_new_norm > 1e-6f) {
+        det.quat_w /= q_new_norm;
+        det.quat_x /= q_new_norm;
+        det.quat_y /= q_new_norm;
+        det.quat_z /= q_new_norm;
+    }
+    
+    float q_old_norm = sqrtf(hist.quat_w * hist.quat_w + hist.quat_x * hist.quat_x + 
+                             hist.quat_y * hist.quat_y + hist.quat_z * hist.quat_z);
+    if (q_old_norm > 1e-6f) {
+        hist.quat_w /= q_old_norm;
+        hist.quat_x /= q_old_norm;
+        hist.quat_y /= q_old_norm;
+        hist.quat_z /= q_old_norm;
+    }
+    
+    // Dot product to check if quaternions are close (same rotation) or far (opposite)
+    float dot = hist.quat_w * det.quat_w + hist.quat_x * det.quat_x + 
+                hist.quat_y * det.quat_y + hist.quat_z * det.quat_z;
+    
+    // If dot < 0, quaternions represent opposite rotations, negate one
+    if (dot < 0.0f) {
+        det.quat_w = -det.quat_w;
+        det.quat_x = -det.quat_x;
+        det.quat_y = -det.quat_y;
+        det.quat_z = -det.quat_z;
+        dot = -dot;
+    }
+    
+    // Clamp dot to [-1, 1] for acos
+    dot = fmaxf(-1.0f, fminf(1.0f, dot));
+    
+    // Use simple linear interpolation for quaternions (approximation of SLERP)
+    // For small angles, this is very close to SLERP and much faster
+    float t = alpha;  // Interpolation parameter
+    float q_w = (1.0f - t) * hist.quat_w + t * det.quat_w;
+    float q_x = (1.0f - t) * hist.quat_x + t * det.quat_x;
+    float q_y = (1.0f - t) * hist.quat_y + t * det.quat_y;
+    float q_z = (1.0f - t) * hist.quat_z + t * det.quat_z;
+    
+    // Normalize the interpolated quaternion
+    float q_norm = sqrtf(q_w * q_w + q_x * q_x + q_y * q_y + q_z * q_z);
+    if (q_norm > 1e-6f) {
+        q_w /= q_norm;
+        q_x /= q_norm;
+        q_y /= q_norm;
+        q_z /= q_norm;
+    }
+    
+    // Update history
+    hist.quat_w = q_w;
+    hist.quat_x = q_x;
+    hist.quat_y = q_y;
+    hist.quat_z = q_z;
+    
+    // Update rotation matrix from smoothed quaternion
+    // Convert quaternion to rotation matrix
+    cv::Matx33f R_smooth;
+    R_smooth(0, 0) = 1.0f - 2.0f * (q_y * q_y + q_z * q_z);
+    R_smooth(0, 1) = 2.0f * (q_x * q_y - q_w * q_z);
+    R_smooth(0, 2) = 2.0f * (q_x * q_z + q_w * q_y);
+    R_smooth(1, 0) = 2.0f * (q_x * q_y + q_w * q_z);
+    R_smooth(1, 1) = 1.0f - 2.0f * (q_x * q_x + q_z * q_z);
+    R_smooth(1, 2) = 2.0f * (q_y * q_z - q_w * q_x);
+    R_smooth(2, 0) = 2.0f * (q_x * q_z - q_w * q_y);
+    R_smooth(2, 1) = 2.0f * (q_y * q_z + q_w * q_x);
+    R_smooth(2, 2) = 1.0f - 2.0f * (q_x * q_x + q_y * q_y);
+    
+    // Update transformation matrix with smoothed rotation
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            T_old(r, c) = R_smooth(r, c);
+        }
+    }
+    
+    // Update detection with smoothed pose
+    det.T_cam_tag = T_old;
+    det.quat_w = q_w;
+    det.quat_x = q_x;
+    det.quat_y = q_y;
+    det.quat_z = q_z;
+}
+
 void AprilTagGpuDetector::updateROIs(const std::vector<AprilTagDetection>& detections) {
+    // Age ROI regions
     for (auto& roi : rois_) {
         roi.age++;
+    }
+    
+    // Age and clean up pose history if temporal filtering is enabled
+    if (enable_temporal_filtering_) {
+        for (auto it = pose_history_.begin(); it != pose_history_.end();) {
+            it->second.age++;
+            
+            // Remove old entries if max_age is set (> 0)
+            if (temporal_filter_max_age_ > 0 && it->second.age > temporal_filter_max_age_) {
+                it = pose_history_.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
     
     for (const auto& det : detections) {
@@ -1596,6 +1727,11 @@ std::vector<AprilTagDetection> AprilTagGpuDetector::detect(unsigned char* gray_d
                 T(2, 3) = h_t[i * 3 + 2];
                 det.T_cam_tag = T;
                 quaternionFromRotationMatrix(R_mat, det.quat_w, det.quat_x, det.quat_y, det.quat_z);
+                
+                // Apply temporal filtering if enabled
+                if (enable_temporal_filtering_) {
+                    applyTemporalFilter(det);
+                }
                 
                 // Final quality check (temporarily disabled for debugging)
                 // if (det.quality() >= min_quality_) {

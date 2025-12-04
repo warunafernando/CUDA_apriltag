@@ -186,6 +186,19 @@ bool AppConfig::loadFromJSON(const std::string& filename, AppConfig& config) {
     
     config.detection.enable_subpixel_refinement = extractBool(content, "detection_enable_subpixel_refinement");
     config.detection.enable_temporal_filtering = extractBool(content, "detection_enable_temporal_filtering");
+    
+    float temporal_alpha = extractFloat(content, "detection_temporal_filter_alpha");
+    config.detection.temporal_filter_alpha = (temporal_alpha == 0.0f && content.find("detection_temporal_filter_alpha") == std::string::npos) ? 0.3f : temporal_alpha;
+    if (config.detection.temporal_filter_alpha <= 0.0f || config.detection.temporal_filter_alpha > 1.0f) {
+        config.detection.temporal_filter_alpha = 0.3f;  // Default
+    }
+    
+    int temporal_max_age = extractInt(content, "detection_temporal_filter_max_age");
+    config.detection.temporal_filter_max_age = (temporal_max_age == 0 && content.find("detection_temporal_filter_max_age") == std::string::npos) ? 30 : temporal_max_age;
+    if (config.detection.temporal_filter_max_age < 0) {
+        config.detection.temporal_filter_max_age = 0;  // 0 = unlimited
+    }
+    
     config.detection.use_gpu_quad_extraction = extractBool(content, "detection_use_gpu_quad_extraction");
     
     // Load ROI settings
@@ -248,6 +261,8 @@ bool AppConfig::saveToJSON(const std::string& filename, const AppConfig& config)
     file << "  \"detection_min_decision_margin\": " << config.detection.min_decision_margin << ",\n";
     file << "  \"detection_enable_subpixel_refinement\": " << (config.detection.enable_subpixel_refinement ? "true" : "false") << ",\n";
     file << "  \"detection_enable_temporal_filtering\": " << (config.detection.enable_temporal_filtering ? "true" : "false") << ",\n";
+    file << "  \"detection_temporal_filter_alpha\": " << config.detection.temporal_filter_alpha << ",\n";
+    file << "  \"detection_temporal_filter_max_age\": " << config.detection.temporal_filter_max_age << ",\n";
     file << "  \"detection_use_gpu_quad_extraction\": " << (config.detection.use_gpu_quad_extraction ? "true" : "false") << ",\n";
     file << "  \"roi_full_frame_interval\": " << config.roi.full_frame_interval << ",\n";
     file << "  \"roi_decay_frames\": " << config.roi.decay_frames << ",\n";
