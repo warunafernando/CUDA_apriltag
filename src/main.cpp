@@ -133,17 +133,44 @@ int main(int argc, char** argv) {
             return 0;
         }
         
-        // Read and display current camera settings
+        // Read current camera settings
         std::cout << "\nReading current camera settings..." << std::endl;
+        AppConfig::Camera::Controls current_controls = readCameraControls(cap);
         printCameraControls(cap);
         
-        // Apply camera control settings from config
-        std::cout << "Applying camera controls from config..." << std::endl;
-        applyCameraControls(cap, config.camera.controls);
+        // Save current camera settings to config.json (so config always reflects actual camera state)
+        config.camera.controls = current_controls;
+        if (AppConfig::saveToJSON(config_file, config)) {
+            std::cout << "Saved current camera settings to " << config_file << std::endl;
+        }
         
-        // Read and display settings after applying
-        std::cout << "\nCamera settings after applying config:" << std::endl;
-        printCameraControls(cap);
+        // Apply camera control settings from config (if any were specified)
+        bool has_manual_settings = false;
+        if (config.camera.controls.brightness >= 0 || 
+            config.camera.controls.contrast >= 0 ||
+            config.camera.controls.exposure >= 0 ||
+            config.camera.controls.auto_exposure >= 0) {
+            has_manual_settings = true;
+        }
+        
+        if (has_manual_settings) {
+            std::cout << "\nApplying camera controls from config..." << std::endl;
+            applyCameraControls(cap, config.camera.controls);
+            
+            // Read and save settings after applying
+            std::cout << "\nReading camera settings after applying config..." << std::endl;
+            current_controls = readCameraControls(cap);
+            printCameraControls(cap);
+            
+            // Update config with actual values after applying
+            config.camera.controls = current_controls;
+            if (AppConfig::saveToJSON(config_file, config)) {
+                std::cout << "Updated " << config_file << " with actual camera settings" << std::endl;
+            }
+        } else {
+            std::cout << "\nNo manual camera settings in config, using camera defaults." << std::endl;
+            std::cout << "Edit " << config_file << " to set specific values." << std::endl;
+        }
 
         GpuContext ctx(0);
 

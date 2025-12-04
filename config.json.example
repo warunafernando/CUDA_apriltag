@@ -15,6 +15,7 @@
   "camera_gamma": -1.0,
   "camera_auto_exposure": -1,
   "camera_auto_white_balance": -1,
+  "_comment": "Camera controls: -1 = use camera default/auto, or set specific values. Program will auto-update these with actual camera values when it runs."
   "tag_size_m": 0.165,
   "detection_min_quality": 0.01,
   "detection_max_reprojection_error": 500.0,

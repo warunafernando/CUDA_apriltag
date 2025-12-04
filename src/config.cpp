@@ -108,36 +108,67 @@ bool AppConfig::loadFromJSON(const std::string& filename, AppConfig& config) {
     
     config.camera.use_v4l2 = extractBool(content, "camera_use_v4l2");
     
-    // Load camera controls (-1 means use default/auto)
-    float brightness = extractFloat(content, "camera_brightness");
-    config.camera.controls.brightness = (brightness == 0.0f && content.find("camera_brightness") == std::string::npos) ? -1.0 : brightness;
+    // Load camera controls
+    // If value exists in JSON, use it (even if 0.0); if not found, use -1 (auto/default)
+    if (content.find("\"camera_brightness\"") != std::string::npos) {
+        config.camera.controls.brightness = extractFloat(content, "camera_brightness");
+    } else {
+        config.camera.controls.brightness = -1.0;
+    }
     
-    float contrast = extractFloat(content, "camera_contrast");
-    config.camera.controls.contrast = (contrast == 0.0f && content.find("camera_contrast") == std::string::npos) ? -1.0 : contrast;
+    if (content.find("\"camera_contrast\"") != std::string::npos) {
+        config.camera.controls.contrast = extractFloat(content, "camera_contrast");
+    } else {
+        config.camera.controls.contrast = -1.0;
+    }
     
-    float saturation = extractFloat(content, "camera_saturation");
-    config.camera.controls.saturation = (saturation == 0.0f && content.find("camera_saturation") == std::string::npos) ? -1.0 : saturation;
+    if (content.find("\"camera_saturation\"") != std::string::npos) {
+        config.camera.controls.saturation = extractFloat(content, "camera_saturation");
+    } else {
+        config.camera.controls.saturation = -1.0;
+    }
     
-    float exposure = extractFloat(content, "camera_exposure");
-    config.camera.controls.exposure = (exposure == 0.0f && content.find("camera_exposure") == std::string::npos) ? -1.0 : exposure;
+    if (content.find("\"camera_exposure\"") != std::string::npos) {
+        config.camera.controls.exposure = extractFloat(content, "camera_exposure");
+    } else {
+        config.camera.controls.exposure = -1.0;
+    }
     
-    float gain = extractFloat(content, "camera_gain");
-    config.camera.controls.gain = (gain == 0.0f && content.find("camera_gain") == std::string::npos) ? -1.0 : gain;
+    if (content.find("\"camera_gain\"") != std::string::npos) {
+        config.camera.controls.gain = extractFloat(content, "camera_gain");
+    } else {
+        config.camera.controls.gain = -1.0;
+    }
     
-    float white_balance = extractFloat(content, "camera_white_balance");
-    config.camera.controls.white_balance = (white_balance == 0.0f && content.find("camera_white_balance") == std::string::npos) ? -1.0 : white_balance;
+    if (content.find("\"camera_white_balance\"") != std::string::npos) {
+        config.camera.controls.white_balance = extractFloat(content, "camera_white_balance");
+    } else {
+        config.camera.controls.white_balance = -1.0;
+    }
     
-    float sharpness = extractFloat(content, "camera_sharpness");
-    config.camera.controls.sharpness = (sharpness == 0.0f && content.find("camera_sharpness") == std::string::npos) ? -1.0 : sharpness;
+    if (content.find("\"camera_sharpness\"") != std::string::npos) {
+        config.camera.controls.sharpness = extractFloat(content, "camera_sharpness");
+    } else {
+        config.camera.controls.sharpness = -1.0;
+    }
     
-    float gamma = extractFloat(content, "camera_gamma");
-    config.camera.controls.gamma = (gamma == 0.0f && content.find("camera_gamma") == std::string::npos) ? -1.0 : gamma;
+    if (content.find("\"camera_gamma\"") != std::string::npos) {
+        config.camera.controls.gamma = extractFloat(content, "camera_gamma");
+    } else {
+        config.camera.controls.gamma = -1.0;
+    }
     
-    int auto_exposure = extractInt(content, "camera_auto_exposure");
-    config.camera.controls.auto_exposure = (auto_exposure == 0 && content.find("camera_auto_exposure") == std::string::npos) ? -1 : auto_exposure;
+    if (content.find("\"camera_auto_exposure\"") != std::string::npos) {
+        config.camera.controls.auto_exposure = extractInt(content, "camera_auto_exposure");
+    } else {
+        config.camera.controls.auto_exposure = -1;
+    }
     
-    int auto_white_balance = extractInt(content, "camera_auto_white_balance");
-    config.camera.controls.auto_white_balance = (auto_white_balance == 0 && content.find("camera_auto_white_balance") == std::string::npos) ? -1 : auto_white_balance;
+    if (content.find("\"camera_auto_white_balance\"") != std::string::npos) {
+        config.camera.controls.auto_white_balance = extractInt(content, "camera_auto_white_balance");
+    } else {
+        config.camera.controls.auto_white_balance = -1;
+    }
     
     // Load tag settings
     config.tag.size_m = extractFloat(content, "tag_size_m");
