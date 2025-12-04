@@ -108,6 +108,37 @@ bool AppConfig::loadFromJSON(const std::string& filename, AppConfig& config) {
     
     config.camera.use_v4l2 = extractBool(content, "camera_use_v4l2");
     
+    // Load camera controls (-1 means use default/auto)
+    float brightness = extractFloat(content, "camera_brightness");
+    config.camera.controls.brightness = (brightness == 0.0f && content.find("camera_brightness") == std::string::npos) ? -1.0 : brightness;
+    
+    float contrast = extractFloat(content, "camera_contrast");
+    config.camera.controls.contrast = (contrast == 0.0f && content.find("camera_contrast") == std::string::npos) ? -1.0 : contrast;
+    
+    float saturation = extractFloat(content, "camera_saturation");
+    config.camera.controls.saturation = (saturation == 0.0f && content.find("camera_saturation") == std::string::npos) ? -1.0 : saturation;
+    
+    float exposure = extractFloat(content, "camera_exposure");
+    config.camera.controls.exposure = (exposure == 0.0f && content.find("camera_exposure") == std::string::npos) ? -1.0 : exposure;
+    
+    float gain = extractFloat(content, "camera_gain");
+    config.camera.controls.gain = (gain == 0.0f && content.find("camera_gain") == std::string::npos) ? -1.0 : gain;
+    
+    float white_balance = extractFloat(content, "camera_white_balance");
+    config.camera.controls.white_balance = (white_balance == 0.0f && content.find("camera_white_balance") == std::string::npos) ? -1.0 : white_balance;
+    
+    float sharpness = extractFloat(content, "camera_sharpness");
+    config.camera.controls.sharpness = (sharpness == 0.0f && content.find("camera_sharpness") == std::string::npos) ? -1.0 : sharpness;
+    
+    float gamma = extractFloat(content, "camera_gamma");
+    config.camera.controls.gamma = (gamma == 0.0f && content.find("camera_gamma") == std::string::npos) ? -1.0 : gamma;
+    
+    int auto_exposure = extractInt(content, "camera_auto_exposure");
+    config.camera.controls.auto_exposure = (auto_exposure == 0 && content.find("camera_auto_exposure") == std::string::npos) ? -1 : auto_exposure;
+    
+    int auto_white_balance = extractInt(content, "camera_auto_white_balance");
+    config.camera.controls.auto_white_balance = (auto_white_balance == 0 && content.find("camera_auto_white_balance") == std::string::npos) ? -1 : auto_white_balance;
+    
     // Load tag settings
     config.tag.size_m = extractFloat(content, "tag_size_m");
     if (config.tag.size_m == 0.0f) config.tag.size_m = 0.165f;
@@ -170,6 +201,16 @@ bool AppConfig::saveToJSON(const std::string& filename, const AppConfig& config)
     file << "  \"camera_decimation\": " << config.camera.decimation << ",\n";
     file << "  \"camera_device\": \"" << config.camera.device << "\",\n";
     file << "  \"camera_use_v4l2\": " << (config.camera.use_v4l2 ? "true" : "false") << ",\n";
+    file << "  \"camera_brightness\": " << config.camera.controls.brightness << ",\n";
+    file << "  \"camera_contrast\": " << config.camera.controls.contrast << ",\n";
+    file << "  \"camera_saturation\": " << config.camera.controls.saturation << ",\n";
+    file << "  \"camera_exposure\": " << config.camera.controls.exposure << ",\n";
+    file << "  \"camera_gain\": " << config.camera.controls.gain << ",\n";
+    file << "  \"camera_white_balance\": " << config.camera.controls.white_balance << ",\n";
+    file << "  \"camera_sharpness\": " << config.camera.controls.sharpness << ",\n";
+    file << "  \"camera_gamma\": " << config.camera.controls.gamma << ",\n";
+    file << "  \"camera_auto_exposure\": " << config.camera.controls.auto_exposure << ",\n";
+    file << "  \"camera_auto_white_balance\": " << config.camera.controls.auto_white_balance << ",\n";
     file << "  \"tag_size_m\": " << config.tag.size_m << ",\n";
     file << "  \"detection_min_quality\": " << config.detection.min_quality << ",\n";
     file << "  \"detection_max_reprojection_error\": " << config.detection.max_reprojection_error << ",\n";

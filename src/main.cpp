@@ -3,6 +3,7 @@
 #include "apriltag_gpu.h"
 #include "camera_intrinsics.h"
 #include "config.h"
+#include "camera_controls.h"
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -80,6 +81,10 @@ int main(int argc, char** argv) {
         cap.set(cv::CAP_PROP_FRAME_WIDTH, width);
         cap.set(cv::CAP_PROP_FRAME_HEIGHT, height);
         cap.set(cv::CAP_PROP_FPS, config.camera.fps);
+        
+        // Apply camera control settings
+        std::cout << "Applying camera controls..." << std::endl;
+        applyCameraControls(cap, config.camera.controls);
 
         GpuContext ctx(0);
 

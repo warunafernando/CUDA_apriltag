@@ -14,6 +14,21 @@ struct AppConfig {
         int decimation{2};  // Working resolution = width/decimation x height/decimation
         std::string device{"/dev/video0"};  // Camera device path or index
         bool use_v4l2{true};  // Use V4L2 backend
+        
+        // Camera control settings (V4L2/OpenCV properties)
+        // Use -1 to leave at default/auto
+        struct Controls {
+            double brightness{-1.0};      // -1 = auto/default, 0.0-1.0 or absolute value
+            double contrast{-1.0};        // -1 = auto/default, 0.0-1.0 or absolute value
+            double saturation{-1.0};      // -1 = auto/default, 0.0-1.0 or absolute value
+            double exposure{-1.0};        // -1 = auto/default, exposure time in ms or relative
+            double gain{-1.0};            // -1 = auto/default, gain value
+            double white_balance{-1.0};   // -1 = auto, 0.0-1.0 or temperature in K
+            double sharpness{-1.0};       // -1 = auto/default, 0.0-1.0 or absolute value
+            double gamma{-1.0};           // -1 = auto/default, gamma value
+            int auto_exposure{-1};        // -1 = auto, 0 = manual, 1 = auto
+            int auto_white_balance{-1};   // -1 = auto, 0 = manual, 1 = auto
+        } controls;
     } camera;
     
     // Tag settings

@@ -37,7 +37,7 @@ set_target_properties(cuda_apriltag PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     POSITION_INDEPENDENT_CODE ON)
 
-add_executable(apriltag_demo src/main.cpp src/config.cpp)
+add_executable(apriltag_demo src/main.cpp src/config.cpp src/camera_intrinsics.cpp src/camera_controls.cpp)
 target_link_libraries(apriltag_demo PRIVATE cuda_apriltag ${OpenCV_LIBS})
 
 add_executable(quad_extraction_benchmark src/quad_extraction_benchmark.cpp)
